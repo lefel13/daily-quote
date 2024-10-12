@@ -1,0 +1,13 @@
+{
+    "editor.rulers": [
+        80
+    ],
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.autopep8"
+    },
+    "autopep8.args": [
+        "--global-config",
+        "${workspaceFolder}/src/server/python/pyproject.toml"
+    ]
+}
