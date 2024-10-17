@@ -16,81 +16,71 @@
 
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 
-class Quote(SQLModel, table=True):
-    """
-    A model representing a quote with an author and text.
-
-    Attributes:
-        id (Optional[int]): The unique identifier of the quote (auto-incremented).
-        author (str): The author of the quote.
-        text (str): The content of the quote.
-    """
-    id: Optional[int] = Field(default=None, primary_key=True)
+class QuoteBase(SQLModel):
     author: str
     text: str
+
+
+class Quote(QuoteBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+
+class QuoteRequest(QuoteBase):
+    pass
+
+
+class QuoteResponse(QuoteBase):
+    id: int
 
 
 # Database file and connection URL for SQLite.
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
-
-# Create the database engine, which will handle connections to the SQLite database.
-# The echo=True parameter is for logging SQL statements, useful for debugging.
-engine = create_engine(sqlite_url, echo=True)
+# "check_same_thread" is set to False to make sure we don't share the
+# same session in more than one request and we also need to disable it
+# because in FastAPI each request could be handled by multiple interacting
+# threads.
+connect_args = {"check_same_thread": False}
+# Create the database engine, which will handle connections to the SQLite
+# database. The echo=True parameter is for logging SQL statements, useful
+# for debugging.
+engine = create_engine(sqlite_url, echo=True, connect_args=connect_args)
 
 
 def create_db_and_tables():
-    """
-    Create the database and its tables based on the defined models.
-
-    This function uses SQLModel's metadata to create all tables
-    defined by model classes inheriting from SQLModel, such as the Quote model.
-    """
     SQLModel.metadata.create_all(engine)
 
 
-# FastAPI instance to define and serve the REST API.
-app = FastAPI()
+def get_session():
+    with Session(engine) as session:
+        # Use yield instead of return to go back here and close the 'with'
+        # block, and cleanup and close the session
+        yield session
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Context manager for the lifespan of the FastAPI application.
-
-    This function ensures that the database and its tables are created
-    when the application starts, and yields control back to the main event loop.
-    """
     create_db_and_tables()
     yield
 
+# FastAPI instance to define and serve the REST API.
+app = FastAPI(lifespan=lifespan)
 
-@app.post("/quotes/")
-async def create_quote(quote: Quote):
-    """
-    Create a new quote in the database.
 
-    This endpoint allows users to submit a new quote by providing the author's
-    name and the quote's content. The quote is saved in the database, and the
-    newly created quote object is returned.
-
-    Args:
-        quote (Quote): A Quote object containing the author's name and the quote's content.
-
-    Returns:
-        Quote: The newly created Quote object with its generated ID.
-    """
-    # Create a session with the database, add the quote, and commit the
-    # transaction.
-    with Session(engine) as session:
-        session.add(quote)
-        session.commit()
-        # Refresh the quote object to include its generated ID.
-        session.refresh(quote)
-
-    # Return the newly created quote.
-    return quote
+@app.post("/quotes/", response_model=QuoteResponse)
+async def create_quote(
+        *, session: Session = Depends(get_session), quote: QuoteRequest):
+    # Get a database model from the model passed within the request
+    quote_in_db = Quote.model_validate(quote)
+    # Add it in a transaction to the database
+    session.add(quote_in_db)
+    # Commit the transaction
+    session.commit()
+    # Refresh the quote object to include its generated ID
+    session.refresh(quote_in_db)
+    # Return the newly created quote, compliant with the response model
+    return quote_in_db

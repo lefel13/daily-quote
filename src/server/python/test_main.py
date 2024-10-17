@@ -15,58 +15,39 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
-import os
-from .main import app, sqlite_file_name, create_db_and_tables
+from .main import app, get_session
 from fastapi.testclient import TestClient
-
-# Create a TestClient for the FastAPI app
-client = TestClient(app)
-
-
-def clear_db():
-    """
-    Ensure that the database.db file is deleted before each test,
-    clearing all data.
-
-    This function is useful for tests that require a clean state
-    by removing the existing SQLite database file if it exists.
-    """
-    if os.path.exists(sqlite_file_name):
-        os.remove(sqlite_file_name)
+from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel.pool import StaticPool
 
 
-@pytest.fixture(autouse=True)
-def pre_and_post_conditions():
-    """
-    This pytest fixture sets up pre-conditions and post-conditions
-    for each test.
+@pytest.fixture(name="session")
+def session_fixture():
+    # poolclass set to StaticPool to use an in-memory database
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
 
-    It ensures that the database is cleared and recreated before
-    each test by calling `clear_db()` and `create_db_and_tables()`.
-    """
-    # Pre conditions: Clear the database and recreate the schema
-    clear_db()
-    create_db_and_tables()
-    yield
-    # Post conditions: Any cleanup code can go here if needed
+
+@pytest.fixture(name="client")
+def client_fixture(session: Session):
+    def get_session_override():
+        return session
+
+    app.dependency_overrides[get_session] = get_session_override
+
+    client = TestClient(app)
+    yield client
+    app.dependency_overrides.clear()
 
 
 class TestQuotes:
-    """
-    A test class for testing the /quotes endpoint in the FastAPI app.
-
-    Contains tests to ensure that quotes can be posted and that
-    the primary key increments correctly.
-    """
-
-    def test_post(self, pre_and_post_conditions):
-        """
-        Test the POST /quotes endpoint.
-
-        This test checks that a quote can be posted with a valid
-        author and text, and the response contains the expected
-        data including an auto-generated ID.
-        """
+    def test_post_response(self, client: TestClient):
         author = "John Doe"
         text = "Hello World!"
         payload = {"author": author, "text": text}
@@ -76,14 +57,7 @@ class TestQuotes:
         assert response.json()["author"] == author
         assert response.json()["text"] == text
 
-    def test_post_primary_key(self, pre_and_post_conditions):
-        """
-        Test that the primary key (id) increments correctly.
-
-        This test posts the same quote multiple times to the /quotes
-        endpoint and checks that the `id` field increments for each
-        new entry, reaching the expected value for the last entry.
-        """
+    def test_post_primary_key(self, client: TestClient):
         payload = {"author": "John Doe", "text": "The first quote"}
         n = 10
         for i in range(1, n + 1):
