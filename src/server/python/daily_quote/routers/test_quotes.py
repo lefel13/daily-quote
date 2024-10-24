@@ -22,6 +22,8 @@ and verify the correctness of the quote creation functionality in the API.
 """
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
+from ..quote_model import Quote
 
 
 class TestQuotes:
@@ -31,6 +33,35 @@ class TestQuotes:
     It contains test methods to verify the creation of quotes and ensure
     the database assigns unique primary keys.
     """
+
+    def test_post(self, client: TestClient, session: Session):
+        """
+        Test creating a quote and verify that it is saved in the database.
+
+        This test sends a POST request to create a new quote and checks
+        whether the quote is stored correctly in the database.
+
+        Args:
+            client (TestClient): A FastAPI TestClient instance for sending HTTP requests.
+            session (Session): A SQLModel session instance for database interaction.
+        """
+        author = "John Doe"
+        text = "Hello World!"
+        payload = {"author": author, "text": text}
+        response = client.post("/quotes", json=payload)
+
+        assert response.status_code == 200
+
+        statement = select(Quote).where(
+            Quote.author == author, Quote.text == text)
+        results = session.exec(statement).fetchall()
+
+        assert len(results) == 1
+
+        quote_in_db = results[0]
+
+        assert quote_in_db.author == author
+        assert quote_in_db.text == text
 
     def test_post_response(self, client: TestClient):
         """
@@ -67,5 +98,4 @@ class TestQuotes:
         n = 10
         for i in range(1, n + 1):
             response = client.post("/quotes", json=payload)
-            print(f"{i} --- {response.json()['id']}")
         assert response.json()["id"] == n
