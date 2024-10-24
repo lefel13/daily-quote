@@ -1,0 +1,19 @@
+[project]
+name = "daily-quote"
+version = "0.1.0"
+description = "A small application for sharing and reading beautiful quotes daily. This repository serves as a personal project for learning how to develop a distributed application, with a REST API backend and client applications across multiple platforms for user interaction. Additionally, it includes the process of hosting the service online using AWS."
+license = {name = "GNU General Public License v3 (GPLv3)", file = "../../../LICENSE"}
+readme = "../../../README.md"
+requires-python = ">=3.8.10"
+keywords = ["quotes", "REST API", "distributed application", "learning", "AWS"]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.autopep8]
+max_line_length = 79
+aggressive = 1
+
+[tool.black]
+line-length = 79
