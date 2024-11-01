@@ -18,7 +18,8 @@
 Test suite for the 'quotes' API endpoints in the 'daily_quote' project.
 
 This test suite uses pytest and FastAPI's TestClient to simulate HTTP requests
-and verify the correctness of the quote creation functionality in the API.
+and verify the correctness of the quote creation and retrieval functionality
+in the API.
 """
 
 from fastapi.testclient import TestClient
@@ -30,8 +31,8 @@ class TestQuotes:
     """
     A test class for the quote-related API endpoints.
 
-    It contains test methods to verify the creation of quotes and ensure
-    the database assigns unique primary keys.
+    It contains test methods to verify the creation and retrieval of quotes
+    and ensure the database assigns unique primary keys.
     """
 
     def test_post(self, client: TestClient, session: Session):
@@ -99,3 +100,101 @@ class TestQuotes:
         for i in range(1, n + 1):
             response = client.post("/quotes", json=payload)
         assert response.json()["id"] == n
+
+    def test_get(self, client: TestClient, session: Session):
+        """
+        Test retrieving a quote via the /quotes GET endpoint.
+
+        This test inserts a quote directly into the database and verifies that
+        the quote can be retrieved through a GET request.
+
+        Args:
+            client (TestClient): A FastAPI TestClient instance for sending HTTP requests.
+            session (Session): A SQLModel session instance for database interaction.
+        """
+        author = "John Doe"
+        text = "Hello World!"
+        quote = Quote(author=author, text=text)
+        session.add(quote)
+        session.commit()
+
+        response = client.get("/quotes")
+
+        assert response.json()[0]["author"] == author
+        assert response.json()[0]["text"] == text
+
+    def test_get_response(self, client: TestClient, session: Session):
+        """
+        Test that the /quotes GET endpoint retrieves multiple quotes.
+
+        This test inserts multiple quotes into the database and verifies
+        that the GET request retrieves the correct number of quotes with the
+        correct data.
+
+        Args:
+            client (TestClient): A FastAPI TestClient instance for sending HTTP requests.
+            session (Session): A SQLModel session instance for database interaction.
+        """
+        n = 10
+        author = "John Doe"
+        text = "Hello World!"
+        for i in range(0, n):
+            quote = Quote(author=author, text=text)
+            session.add(quote)
+        session.commit()
+
+        response = client.get("/quotes")
+
+        assert response.status_code == 200
+        assert response.json()[n - 1]["id"] == n
+        assert response.json()[n - 1]["author"] == author
+        assert response.json()[n - 1]["text"] == text
+
+    def test_get_offset(self, client: TestClient, session: Session):
+        """
+        Test that the /quotes GET endpoint respects the 'offset' parameter.
+
+        This test adds multiple quotes to the database and verifies that
+        using the offset parameter returns the correct quote.
+
+        Args:
+            client (TestClient): A FastAPI TestClient instance for sending HTTP requests.
+            session (Session): A SQLModel session instance for database interaction.
+        """
+        data = {"John Doe": "Hello World!", "Lewis Hamilton": "Still we rise!"}
+        for author, text in data.items():
+            quote = Quote(author=author, text=text)
+            session.add(quote)
+        session.commit()
+
+        offset = 1
+        params = {"offset": offset}
+
+        response = client.get("/quotes", params=params)
+
+        assert response.json()[0]["author"] == list(data.keys())[offset]
+        assert response.json()[0]["text"] == list(data.values())[offset]
+
+    def test_get_limit(self, client: TestClient, session: Session):
+        """
+        Test that the /quotes GET endpoint respects the 'limit' parameter.
+
+        This test verifies that using the limit parameter returns only the
+        specified number of quotes.
+
+        Args:
+            client (TestClient): A FastAPI TestClient instance for sending HTTP requests.
+            session (Session): A SQLModel session instance for database interaction.
+        """
+        data = {"John Doe": "Hello World!", "Lewis Hamilton": "Still we rise!"}
+        for author, text in data.items():
+            quote = Quote(author=author, text=text)
+            session.add(quote)
+        session.commit()
+
+        limit = 1
+        params = {"limit": limit}
+
+        response = client.get("/quotes", params=params)
+
+        assert len(response.json()) == limit
